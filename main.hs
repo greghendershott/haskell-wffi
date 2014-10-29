@@ -4,6 +4,7 @@ module Wffi(
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.List
 import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
@@ -73,3 +74,20 @@ markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
                       False
                       Text.Pandoc.Options.AllChanges)
                      s
+
+-- Example usage:
+test = do
+  let md = foldl1 (++) $ intersperse "\n"
+           ["# The Foo Service",
+            "Para of intro text.",
+            "",
+            "Endpoint: http://foo.bar.com/api/v1",
+            "",
+            "# Get",
+            "",
+            "## Request",
+            "```",
+            "GET /users/{user}",
+            "```",
+            ""]
+  print $ markdownToService md
