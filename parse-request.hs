@@ -3,7 +3,7 @@ module Wffi.ParseURL(
 ) where
 
 import Text.ParserCombinators.Parsec
-import Wffi.KeyVal
+import KeyVal
 
 data RequestTemplate = RequestTemplate
                        { rtMethod :: String
@@ -16,14 +16,18 @@ data RequestTemplate = RequestTemplate
 parseRequestTemplate :: String -> Either ParseError RequestTemplate
 parseRequestTemplate input = parse request "(unknown)" input
 
+-- example usage:
+-- parseTest request "GET /foo/bar.baz/users/{user}?k=0&k1=1"
+-- parseTest request "GET /foo/bar.baz/users/{user}?q=0&r={}&s={alias}&[opt={}]&[copt=1]\nServer: Foo\nBar: Baz\n\n"
+
 request :: GenParser Char st RequestTemplate
 request = do
   many ws
   m <- method
   many1 $ char ' '
   pps <- many1 pathPart
-  qps <- queryParams
-  hs <- return [] -- (optional headers [])
+  qps <- (option [] queryParams)
+  hs <- (option [] headers)
   body <- return "" -- FIXME
   many ws
   eof
@@ -37,15 +41,19 @@ method = do
     <|> (try $ string "DELETE")
     <|> (try $ string "PATCH")
 
+-- Path parts
+
 pathPart :: GenParser Char st Value
 pathPart = try $ do
-  dummy <- (oneOf "/")
+  (oneOf "/")
   (try variable) <|> pathConstant
 
 pathConstant :: GenParser Char st Value
 pathConstant = do
   cs <- many1 (noneOf "?/")
   return (Constant cs)
+
+-- Query parameters
 
 queryParams :: GenParser Char st [KeyVal]
 queryParams = try $ do
@@ -63,12 +71,10 @@ queryParamReq = try $ do
 
 queryParamOpt :: GenParser Char st KeyVal
 queryParamOpt = try $ do
-  char '['
-  k <- queryKey
-  char '='
-  v <- queryVal
-  char ']'
-  return (KeyVal k v)
+  (char '[')
+  kv <- queryParamReq
+  (char ']')
+  return kv
 
 queryKey :: GenParser Char st String
 queryKey = many (alphaNum <|> oneOf "-_.")
@@ -80,12 +86,55 @@ queryValConstant = do
   cs <- many (alphaNum <|> oneOf "-_.")
   return (Constant cs)
 
+-- Headers
+
+headers :: GenParser Char st [KeyVal]
+headers = try $ do
+  many ws
+  xs <- many header
+  -- (char '\n')
+  return xs
+
+header :: GenParser Char st KeyVal
+header = try $ do
+  h <- headerReq <|> headerOpt
+  char '\n'
+  return h
+
+headerReq :: GenParser Char st KeyVal
+headerReq = try $ do
+  k <- headerKey
+  many ws
+  char ':'
+  many ws
+  v <- headerVal
+  return (KeyVal k v)
+
+headerOpt :: GenParser Char st KeyVal
+headerOpt = try $ do
+  (char '[')
+  kv <- headerReq
+  (char ']')
+  return kv
+
+headerKey :: GenParser Char st String
+headerKey = many (alphaNum <|> oneOf "-_.")
+
+headerVal = variable <|> headerValConstant
+
+headerValConstant :: GenParser Char st Value
+headerValConstant = do
+  cs <- many (alphaNum <|> oneOf "-_.")
+  return (Constant cs)
+
+-- General
+
 variable :: GenParser Char st Value
 variable = try $ do
-  cs <- between (char '{') (char '}') (many1 (noneOf "}"))
-  return (Variable (Just cs) "")
+  cs <- between (char '{') (char '}') (many (noneOf "}"))
+  return (case cs of
+    "" -> (Variable Nothing)
+    _  -> (Variable (Just cs)))
 
 ws :: GenParser Char st [Char]
 ws = (oneOf " \n") >> return []
-
----------------
