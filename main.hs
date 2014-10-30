@@ -9,6 +9,7 @@ import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
 import Text.Show.Functions -- b/c function member of ApiFunction
+import ParseRequest
 
 type RequestMap = Map.Map String String
 
@@ -17,7 +18,8 @@ type RequestMap = Map.Map String String
 
 data ApiFunction = ApiFunction { apiName :: [Inline]
                                , apiDescription :: [Block]
-                               , requestTemplate :: String -- for debugging
+                               , requestTemplateRaw :: String -- for debugging
+                               , requestTemplate :: Maybe RequestTemplate
                                , request :: RequestMap -> String
                                } deriving (Show)
 
@@ -42,6 +44,7 @@ markdownToService s =
 
 markdownToPandoc :: String -> Pandoc
 markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
+                     -- Is there a less-verbose way to do the following?
                      (Text.Pandoc.Options.ReaderOptions
                       Set.empty
                       False
@@ -73,15 +76,26 @@ sectionToApiFunction :: [Block] -> ApiFunction
 sectionToApiFunction blocks =
   let name = case blocks of ((Header 1 _ x) : _) -> x
       desc = case blocks of ((Header 1 _ _) : x) -> x
+      rawrt = findRequestTemplate blocks
+      rt = parseRequestTemplate rawrt
+      f = case rt of
+        (Just t) -> requestTemplateToWrapper t
+        Nothing  -> \_ -> "could not parse request template"
   in ApiFunction{ apiName = name,
                   apiDescription = desc,
-                  requestTemplate = findRequestTemplate blocks,
-                  request = \_ -> "todo" }
+                  requestTemplateRaw = rawrt,
+                  requestTemplate = rt,
+                  request = f }
 
 findRequestTemplate :: [Block] -> String
 findRequestTemplate [] = "not-found"
 findRequestTemplate ((Para [(Code _ s)]) : _) = s
 findRequestTemplate (_:xs) = findRequestTemplate xs
+
+requestTemplateToWrapper :: RequestTemplate -> (RequestMap -> String)
+requestTemplateToWrapper _ = (\_ -> "TO-DO")
+
+-- Utility stuff
 
 gatherBy :: (a -> Bool) -> [a] -> [[a]]
 gatherBy pred [] = []

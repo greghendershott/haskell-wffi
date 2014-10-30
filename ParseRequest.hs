@@ -1,5 +1,6 @@
-module Wffi.ParseURL(
-  -- parseRequestTemplate
+module ParseRequest(
+  parseRequestTemplate,
+  RequestTemplate(..)
 ) where
 
 import Text.ParserCombinators.Parsec
@@ -13,8 +14,11 @@ data RequestTemplate = RequestTemplate
                        , rtBody :: String
                        } deriving (Show)
 
-parseRequestTemplate :: String -> Either ParseError RequestTemplate
-parseRequestTemplate input = parse request "(unknown)" input
+parseRequestTemplate :: String -> Maybe RequestTemplate
+parseRequestTemplate input =
+  case (parse request "(unknown)" input) of
+    (Right rt) -> Just rt
+    (Left pe) -> Nothing
 
 -- example usage:
 -- parseTest request "GET /foo/bar.baz/users/{user}?k=0&k1=1"
