@@ -1,5 +1,5 @@
 module Wffi(
---  markdownToService
+  markdownToService
 ) where
 
 import qualified Data.Map as Map
