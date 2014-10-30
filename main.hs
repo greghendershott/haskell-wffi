@@ -99,9 +99,10 @@ requestTemplateToWrapper _ = (\_ -> "TO-DO")
 
 gatherBy :: (a -> Bool) -> [a] -> [[a]]
 gatherBy pred [] = []
-gatherBy pred (x:xs) = let run = takeWhile (complement pred) xs
-                           more = dropWhile (complement pred) xs in
-  (x : run) : (gatherBy pred more)
+gatherBy pred (x:xs) =
+  let run = takeWhile (complement pred) xs
+      more = dropWhile (complement pred) xs
+  in (x : run) : (gatherBy pred more)
 
 complement :: (a -> Bool) -> (a -> Bool)
 complement f x = not $ f x
