@@ -4,7 +4,7 @@ module Wffi(
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List
+import Data.List (intersperse)
 import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
@@ -17,6 +17,7 @@ type RequestMap = Map.Map String String
 
 data ApiFunction = ApiFunction { apiName :: [Inline]
                                , apiDescription :: [Block]
+                               , requestTemplate :: String -- for debugging
                                , request :: RequestMap -> String
                                } deriving (Show)
 
@@ -37,26 +38,7 @@ markdownToService s =
   in Service { serviceName = name,
                serviceDescription = desc,
                endpoint = ep,
-               functions = [] }
-
-findEndpoint :: [Block] -> String
-findEndpoint b = "to-do"
-                 
-h1Sections :: Pandoc -> [[Block]]
-h1Sections (Pandoc _ blocks) = gatherBy h1Pred blocks
-
-h1Pred :: Block -> Bool
-h1Pred (Header 1 _ _) = True
-h1Pred  _             = False
-
-gatherBy :: (a -> Bool) -> [a] -> [[a]]
-gatherBy pred [] = []
-gatherBy pred (x:xs) = let run = takeWhile (complement pred) xs
-                           more = dropWhile (complement pred) xs in
-  (x : run) : (gatherBy pred more)
-
-complement :: (a -> Bool) -> (a -> Bool)
-complement f x = not $ f x
+               functions = map sectionToApiFunction $ tail sections }
 
 markdownToPandoc :: String -> Pandoc
 markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
@@ -74,6 +56,41 @@ markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
                       False
                       Text.Pandoc.Options.AllChanges)
                      s
+
+h1Sections :: Pandoc -> [[Block]]
+h1Sections (Pandoc _ blocks) = gatherBy h1Pred blocks
+
+h1Pred :: Block -> Bool
+h1Pred (Header 1 _ _) = True
+h1Pred  _             = False
+
+findEndpoint :: [Block] -> String
+findEndpoint [] = "not-found"
+findEndpoint ((Para [Str "Endpoint:", Space, Str url]) : _) = url
+findEndpoint (_ : xs) = findEndpoint xs
+
+sectionToApiFunction :: [Block] -> ApiFunction
+sectionToApiFunction blocks =
+  let name = case blocks of ((Header 1 _ x) : _) -> x
+      desc = case blocks of ((Header 1 _ _) : x) -> x
+  in ApiFunction{ apiName = name,
+                  apiDescription = desc,
+                  requestTemplate = findRequestTemplate blocks,
+                  request = \_ -> "todo" }
+
+findRequestTemplate :: [Block] -> String
+findRequestTemplate [] = "not-found"
+findRequestTemplate ((Para [(Code _ s)]) : _) = s
+findRequestTemplate (_:xs) = findRequestTemplate xs
+
+gatherBy :: (a -> Bool) -> [a] -> [[a]]
+gatherBy pred [] = []
+gatherBy pred (x:xs) = let run = takeWhile (complement pred) xs
+                           more = dropWhile (complement pred) xs in
+  (x : run) : (gatherBy pred more)
+
+complement :: (a -> Bool) -> (a -> Bool)
+complement f x = not $ f x
 
 -- Example usage:
 test = do
