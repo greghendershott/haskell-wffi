@@ -3,6 +3,8 @@ module ParseRequest(
   RequestTemplate(..)
 ) where
 
+{-- parsec grammar for request templates --}
+
 import Text.ParserCombinators.Parsec
 import KeyVal
 
@@ -16,7 +18,7 @@ data RequestTemplate = RequestTemplate
 
 parseRequestTemplate :: String -> Maybe RequestTemplate
 parseRequestTemplate input =
-  case (parse request "(unknown)" input) of
+  case parse request "(unknown)" (input ++ "\n\n") of
     (Right rt) -> Just rt
     (Left pe) -> Nothing
 
@@ -76,9 +78,9 @@ queryParamReq = try $ do
 queryParamOpt :: GenParser Char st KeyVal
 queryParamOpt = try $ do
   (char '[')
-  kv <- queryParamReq
+  (KeyVal k v) <- queryParamReq
   (char ']')
-  return kv
+  return (KeyVal k (Optional v))
 
 queryKey :: GenParser Char st String
 queryKey = many (alphaNum <|> oneOf "-_.")
@@ -96,7 +98,6 @@ headers :: GenParser Char st [KeyVal]
 headers = try $ do
   many ws
   xs <- many header
-  -- (char '\n')
   return xs
 
 header :: GenParser Char st KeyVal
@@ -117,9 +118,9 @@ headerReq = try $ do
 headerOpt :: GenParser Char st KeyVal
 headerOpt = try $ do
   (char '[')
-  kv <- headerReq
+  (KeyVal k v) <- headerReq
   (char ']')
-  return kv
+  return (KeyVal k (Optional v))
 
 headerKey :: GenParser Char st String
 headerKey = many (alphaNum <|> oneOf "-_.")
