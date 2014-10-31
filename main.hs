@@ -2,13 +2,13 @@ module Wffi(
   markdownToService
 ) where
 
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import Data.Set (insert, delete)
 import Data.List (intersperse)
 import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
 import Text.Show.Functions -- to Show function member of ApiFunction
+import qualified Network.HTTP as H
 import ParseRequest
 import KeyVal
 
@@ -43,23 +43,18 @@ markdownToService s =
                endpoint = ep,
                functions = map (sectionToApiFunction ep) $ tail sections }
 
+pandocReaderOptions :: ReaderOptions
+pandocReaderOptions = def
+  {
+    readerSmart = True,
+    readerExtensions = delete Ext_implicit_figures $
+                       insert Ext_backtick_code_blocks $
+                       insert Ext_fenced_code_blocks $
+                       readerExtensions def
+  }
+
 markdownToPandoc :: String -> Pandoc
-markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
-                     -- Is there a less-verbose way to do the following?
-                     (Text.Pandoc.Options.ReaderOptions
-                      Set.empty
-                      False
-                      False
-                      False
-                      80
-                      4
-                      False
-                      False
-                      []
-                      ".png"
-                      False
-                      Text.Pandoc.Options.AllChanges)
-                     s
+markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown def s
 
 h1Sections :: Pandoc -> [[Block]]
 h1Sections (Pandoc _ blocks) = gatherBy h1Pred blocks
@@ -90,7 +85,7 @@ sectionToApiFunction endpoint blocks =
 
 findRequestTemplate :: [Block] -> String
 findRequestTemplate [] = "not-found"
-findRequestTemplate ((Para [(Code _ s)]) : _) = s
+findRequestTemplate ((CodeBlock _ s) : _) = s
 findRequestTemplate (_:xs) = findRequestTemplate xs
 
 requestTemplateToWrapper :: RequestTemplate -> String -> (Args -> String)
@@ -106,10 +101,37 @@ doRequest rt endpoint args =
                                      (Just s) -> s
                                      _        -> error "path error")
           _                   -> error "path error"
-      paths = intersperse "/" (map pathValue (rtPathParts rt))
-  in method ++ " " ++
-     endpoint ++ "/" ++
-     (foldl1 (++) paths)
+      paths = (map pathValue (rtPathParts rt))
+      path = endpoint ++ "/" ++ (foldl1 (++) (intersperse "/" paths))
+      -- Some code that can be shared among query params and headers
+      paramValue e fk x =
+        case x of
+          (KeyVal k (Constant v))        -> Just $ k ++ e ++ v
+          (KeyVal _ (Variable (Just k))) -> (case lookup k args of
+                                                (Just v) -> Just $ k ++ e ++ v
+                                                _        -> fk k)
+          (KeyVal k (Variable Nothing))  -> (case lookup  k args of
+                                                (Just v) -> Just $ k ++ e ++ v
+                                                _        -> fk k)
+          (KeyVal k (Optional v)) -> paramValue e (\_ -> Nothing) (KeyVal k v)
+      missing what name =
+        error $ "Missing required " ++ what ++ ": `" ++ name ++ "'"
+      -- The following 2 lines seem like a code smell... ?
+      something x = case x of Nothing -> False; _ -> True
+      just (Just x) = x
+      -- Query parameters
+      queries = map (paramValue "=" (missing "query parameter"))
+                (rtQueryParams rt)
+      query = case (map just (filter something queries)) of
+        [] -> ""
+        xs -> "?" ++ (foldl1 (++) (intersperse "&" xs))
+      -- Headers
+      heads = map (paramValue ":" (missing "header"))
+              (rtHeaders rt)
+      head = case (map just (filter something heads)) of
+        [] -> ""
+        xs -> "\n" ++ (foldl1 (++) (intersperse "\n" xs)) ++ "\n\n"
+  in method ++ " " ++ path ++ query ++ head
 
 -- Utility stuff
 
@@ -134,13 +156,20 @@ test = do
             "# Get",
             "",
             "## Request",
+            "",
+            "GET /users/{user}?qp0={}&[qpOpt={}]&qpAlias={alias}",
+            "Server: {}",
+            "Header: {Aliased-Header}",
             "```",
-            "GET /users/{user}",
-            "```",
+            "",
             ""]
+  print md
   let service = markdownToService md
   print service
   let function = head $ functions service
   let f = request function
-  print $ f [("user","Greg")]
+  print $ f [("user","Greg"),
+             ("qp0","qpval0"),
+             ("alias","foo"),
+             ("Server","bar")]
 
