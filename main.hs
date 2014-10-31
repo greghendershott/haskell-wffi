@@ -4,11 +4,13 @@ module Wffi(
 
 import Data.Set (insert, delete)
 import Data.List (intersperse)
+import Data.Maybe (fromJust)
 import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
 import Text.Show.Functions -- to Show function member of ApiFunction
 import qualified Network.HTTP as H
+import qualified Network.URI as U
 import ParseRequest
 import KeyVal
 
@@ -21,7 +23,7 @@ data ApiFunction = ApiFunction { apiName :: [Inline]
                                , apiDescription :: [Block]
                                , requestTemplateRaw :: String -- for debugging
                                , requestTemplate :: Maybe RequestTemplate
-                               , request :: Args -> String
+                               , request :: Args -> IO (Either String String)
                                } deriving (Show)
 
 data Service = Service { serviceName :: [Inline]
@@ -76,7 +78,7 @@ sectionToApiFunction endpoint blocks =
       rt = parseRequestTemplate rawrt
       f = case rt of
         (Just t) -> requestTemplateToWrapper t endpoint
-        Nothing  -> \_ -> "could not parse request template"
+        Nothing  -> (\_ -> do return $ Left "could not parse request template")
   in ApiFunction{ apiName = name,
                   apiDescription = desc,
                   requestTemplateRaw = rawrt,
@@ -88,18 +90,20 @@ findRequestTemplate [] = "not-found"
 findRequestTemplate ((CodeBlock _ s) : _) = s
 findRequestTemplate (_:xs) = findRequestTemplate xs
 
-requestTemplateToWrapper :: RequestTemplate -> String -> (Args -> String)
+requestTemplateToWrapper :: RequestTemplate -> String -> (Args -> IO (Either String String))
 requestTemplateToWrapper rt endpoint = doRequest rt endpoint
 
-doRequest :: RequestTemplate -> String -> Args -> String
+doRequest :: RequestTemplate -> String -> Args -> IO (Either String String)
 doRequest rt endpoint args =
   let method = rtMethod rt
+      missing what name =
+        error $ "Missing required " ++ what ++ ": `" ++ name ++ "'"
       pathValue x =
         case x of
           (Constant s)        -> s
           (Variable (Just k)) -> (case lookup k args of
                                      (Just s) -> s
-                                     _        -> error "path error")
+                                     _        -> missing "path part" k)
           _                   -> error "path error"
       paths = (map pathValue (rtPathParts rt))
       path = endpoint ++ "/" ++ (foldl1 (++) (intersperse "/" paths))
@@ -114,8 +118,6 @@ doRequest rt endpoint args =
                                                 (Just v) -> Just $ k ++ e ++ v
                                                 _        -> fk k)
           (KeyVal k (Optional v)) -> paramValue e (\_ -> Nothing) (KeyVal k v)
-      missing what name =
-        error $ "Missing required " ++ what ++ ": `" ++ name ++ "'"
       -- The following 2 lines seem like a code smell... ?
       something x = case x of Nothing -> False; _ -> True
       just (Just x) = x
@@ -131,7 +133,28 @@ doRequest rt endpoint args =
       head = case (map just (filter something heads)) of
         [] -> ""
         xs -> "\n" ++ (foldl1 (++) (intersperse "\n" xs)) ++ "\n\n"
-  in method ++ " " ++ path ++ query ++ head
+      url = path ++ query
+      uri = fromJust $ U.parseURI url
+      req = H.Request { H.rqURI = uri,
+                        H.rqMethod = methodStringToData method,
+                        H.rqHeaders = [], -- FIXME
+                        H.rqBody = "" }
+  in do resp <- H.simpleHTTP req
+        case resp of
+          Left x -> return $ Left ("Error connecting: " ++ show x)
+          Right r ->
+            case H.rspCode r of
+              (2,_,_) -> return $ Right (H.rspBody r)
+              _       -> return $ Left (show r)
+
+methodStringToData s =
+  case s of
+    "GET" -> H.GET
+    "PUT" -> H.PUT
+    "POST" -> H.POST
+    "DELETE" -> H.DELETE
+    "OPTIONS" -> H.OPTIONS
+    s -> error $ "Unknown HTTP method " ++ show s
 
 -- Utility stuff
 
@@ -151,25 +174,25 @@ test = do
            ["# The Foo Service",
             "Para of intro text.",
             "",
-            "Endpoint: http://foo.bar.com/api/v1",
+            "Endpoint: http://horseebooksipsum.com",
             "",
             "# Get",
             "",
             "## Request",
             "",
-            "GET /users/{user}?qp0={}&[qpOpt={}]&qpAlias={alias}",
-            "Server: {}",
-            "Header: {Aliased-Header}",
+            "```",
+            "GET /api/v1/{paragraphs}",
+            -- "Server: {}",
+            -- "Header: {Aliased-Header}",
             "```",
             "",
             ""]
   print md
   let service = markdownToService md
   print service
-  let function = head $ functions service
-  let f = request function
-  print $ f [("user","Greg"),
-             ("qp0","qpval0"),
-             ("alias","foo"),
-             ("Server","bar")]
-
+  let f = request $ head $ functions service
+  result <- f [("paragraphs","2")
+              --,("alias","foo")
+              --,("Server","bar")
+              ]
+  print result
