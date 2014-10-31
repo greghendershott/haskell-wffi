@@ -8,10 +8,11 @@ import Data.List (intersperse)
 import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
-import Text.Show.Functions -- b/c function member of ApiFunction
+import Text.Show.Functions -- to Show function member of ApiFunction
 import ParseRequest
+import KeyVal
 
-type RequestMap = Map.Map String String
+type Args = [(String, String)]
 
 -- FIXME: Convert the [Block] and [Inline] to String using some Pandoc
 -- functionality?
@@ -20,7 +21,7 @@ data ApiFunction = ApiFunction { apiName :: [Inline]
                                , apiDescription :: [Block]
                                , requestTemplateRaw :: String -- for debugging
                                , requestTemplate :: Maybe RequestTemplate
-                               , request :: RequestMap -> String
+                               , request :: Args -> String
                                } deriving (Show)
 
 data Service = Service { serviceName :: [Inline]
@@ -40,7 +41,7 @@ markdownToService s =
   in Service { serviceName = name,
                serviceDescription = desc,
                endpoint = ep,
-               functions = map sectionToApiFunction $ tail sections }
+               functions = map (sectionToApiFunction ep) $ tail sections }
 
 markdownToPandoc :: String -> Pandoc
 markdownToPandoc s = Text.Pandoc.Readers.Markdown.readMarkdown
@@ -72,14 +73,14 @@ findEndpoint [] = "not-found"
 findEndpoint ((Para [Str "Endpoint:", Space, Str url]) : _) = url
 findEndpoint (_ : xs) = findEndpoint xs
 
-sectionToApiFunction :: [Block] -> ApiFunction
-sectionToApiFunction blocks =
+sectionToApiFunction :: String -> [Block] -> ApiFunction
+sectionToApiFunction endpoint blocks =
   let name = case blocks of ((Header 1 _ x) : _) -> x
       desc = case blocks of ((Header 1 _ _) : x) -> x
       rawrt = findRequestTemplate blocks
       rt = parseRequestTemplate rawrt
       f = case rt of
-        (Just t) -> requestTemplateToWrapper t
+        (Just t) -> requestTemplateToWrapper t endpoint
         Nothing  -> \_ -> "could not parse request template"
   in ApiFunction{ apiName = name,
                   apiDescription = desc,
@@ -92,8 +93,23 @@ findRequestTemplate [] = "not-found"
 findRequestTemplate ((Para [(Code _ s)]) : _) = s
 findRequestTemplate (_:xs) = findRequestTemplate xs
 
-requestTemplateToWrapper :: RequestTemplate -> (RequestMap -> String)
-requestTemplateToWrapper _ = (\_ -> "TO-DO")
+requestTemplateToWrapper :: RequestTemplate -> String -> (Args -> String)
+requestTemplateToWrapper rt endpoint = doRequest rt endpoint
+
+doRequest :: RequestTemplate -> String -> Args -> String
+doRequest rt endpoint args =
+  let method = rtMethod rt
+      pathValue x =
+        case x of
+          (Constant s)        -> s
+          (Variable (Just k)) -> (case lookup k args of
+                                     (Just s) -> s
+                                     _        -> error "path error")
+          _                   -> error "path error"
+      paths = intersperse "/" (map pathValue (rtPathParts rt))
+  in method ++ " " ++
+     endpoint ++ "/" ++
+     (foldl1 (++) paths)
 
 -- Utility stuff
 
@@ -122,4 +138,9 @@ test = do
             "GET /users/{user}",
             "```",
             ""]
-  print $ markdownToService md
+  let service = markdownToService md
+  print service
+  let function = head $ functions service
+  let f = request function
+  print $ f [("user","Greg")]
+
