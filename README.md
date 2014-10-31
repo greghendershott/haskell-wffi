@@ -15,5 +15,5 @@ Haskellers.
 
 [Racket]: http://www.racket-lang.org
 [wffi]: https://github.com/greghendershott/wffi
-[wffi-clojure]: https://github.com/greghendershott/clojure-wffi
+[clojure-wffi]: https://github.com/greghendershott/clojure-wffi
 [Hacker School]: https://www.hackerschool.com/
