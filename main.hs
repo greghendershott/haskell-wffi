@@ -11,6 +11,7 @@ import Text.Pandoc.Options
 import Text.Pandoc.Definition
 import Text.Show.Functions -- to Show function member of ApiFunction
 import qualified Network.HTTP as H
+import qualified Network.HTTP.Headers as HH
 import qualified Network.URI as U
 import ParseRequest
 import KeyVal
@@ -129,16 +130,14 @@ doRequest rt endpoint args =
         [] -> ""
         xs -> "?" ++ (foldl1 (++) (intersperse "&" xs))
       -- Headers
-      justHead k v = Just $ k ++ ": " ++ v
+      justHead k v = Just $ HH.Header (HH.HdrCustom k) v
       heads = mapMaybe (paramValue justHead (missing "header")) (rtHeaders rt)
-      head = case heads of
-        [] -> ""
-        xs -> "\n" ++ (foldl1 (++) (intersperse "\n" xs)) ++ "\n\n"
+      -- Assemble the Request
       url = path ++ query
       uri = fromJust $ U.parseURI url
       req = H.Request { H.rqURI = uri,
                         H.rqMethod = methodStringToData method,
-                        H.rqHeaders = [], -- FIXME
+                        H.rqHeaders = heads,
                         H.rqBody = "" }
   in do resp <- H.simpleHTTP req
         case resp of
