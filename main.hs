@@ -112,23 +112,25 @@ doRequest rt endpoint args =
       paths = (map pathValue (rtPathParts rt))
       path = endpoint ++ "/" ++ (foldl1 (++) (intersperse "/" paths))
       -- Some code that can be shared among query params and headers
-      paramValue e fk x =
+      paramValue sk fk x =
         case x of
-          (KeyVal k (Constant v))        -> Just $ k ++ e ++ v
+          (KeyVal k (Constant v))        -> sk k v
           (KeyVal _ (Variable (Just k))) -> (case lookup k args of
-                                                (Just v) -> Just $ k ++ e ++ v
+                                                (Just v) -> sk k v
                                                 _        -> fk k)
           (KeyVal k (Variable Nothing))  -> (case lookup  k args of
-                                                (Just v) -> Just $ k ++ e ++ v
+                                                (Just v) -> sk k v
                                                 _        -> fk k)
-          (KeyVal k (Optional v)) -> paramValue e (\_ -> Nothing) (KeyVal k v)
+          (KeyVal k (Optional v)) -> paramValue sk (\_ -> Nothing) (KeyVal k v)
       -- Query parameters
-      queries = mapMaybe (paramValue "=" (missing "query parameter")) (rtQueryParams rt)
+      justQuery k v = Just $ k ++ "=" ++ v
+      queries = mapMaybe (paramValue justQuery (missing "query parameter")) (rtQueryParams rt)
       query = case queries of
         [] -> ""
         xs -> "?" ++ (foldl1 (++) (intersperse "&" xs))
       -- Headers
-      heads = mapMaybe (paramValue ":" (missing "header")) (rtHeaders rt)
+      justHead k v = Just $ k ++ ": " ++ v
+      heads = mapMaybe (paramValue justHead (missing "header")) (rtHeaders rt)
       head = case heads of
         [] -> ""
         xs -> "\n" ++ (foldl1 (++) (intersperse "\n" xs)) ++ "\n\n"
