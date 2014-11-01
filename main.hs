@@ -161,12 +161,11 @@ methodStringToData s =
 gatherBy :: (a -> Bool) -> [a] -> [[a]]
 gatherBy pred [] = []
 gatherBy pred (x:xs) =
-  let run = takeWhile (complement pred) xs
-      more = dropWhile (complement pred) xs
-  in (x : run) : (gatherBy pred more)
-
-complement :: (a -> Bool) -> (a -> Bool)
-complement f x = not $ f x
+  let run  = takeWhile (not . pred) xs
+      more = dropWhile (not . pred) xs
+  in if pred x
+       then (x : run) : (gatherBy pred more)
+       else []
 
 -- Example usage:
 test = do
