@@ -2,6 +2,7 @@ module Wffi(
   markdownToService
 ) where
 
+import Data.Maybe (mapMaybe)
 import Data.Set (insert, delete)
 import Data.List (intersperse)
 import Data.Maybe (fromJust)
@@ -118,19 +119,14 @@ doRequest rt endpoint args =
                                                 (Just v) -> Just $ k ++ e ++ v
                                                 _        -> fk k)
           (KeyVal k (Optional v)) -> paramValue e (\_ -> Nothing) (KeyVal k v)
-      -- The following 2 lines seem like a code smell... ?
-      something x = case x of Nothing -> False; _ -> True
-      just (Just x) = x
       -- Query parameters
-      queries = map (paramValue "=" (missing "query parameter"))
-                (rtQueryParams rt)
-      query = case (map just (filter something queries)) of
+      queries = mapMaybe (paramValue "=" (missing "query parameter")) (rtQueryParams rt)
+      query = case queries of
         [] -> ""
         xs -> "?" ++ (foldl1 (++) (intersperse "&" xs))
       -- Headers
-      heads = map (paramValue ":" (missing "header"))
-              (rtHeaders rt)
-      head = case (map just (filter something heads)) of
+      heads = mapMaybe (paramValue ":" (missing "header")) (rtHeaders rt)
+      head = case heads of
         [] -> ""
         xs -> "\n" ++ (foldl1 (++) (intersperse "\n" xs)) ++ "\n\n"
       url = path ++ query
