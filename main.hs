@@ -22,7 +22,7 @@ type Args = [(String, String)]
 
 data ApiFunction = ApiFunction { apiName :: [Inline]
                                , apiDescription :: [Block]
-                               , requestTemplateRaw :: String -- for debugging
+                               , requestTemplateRaw :: Maybe String -- debug
                                , requestTemplate :: Maybe RequestTemplate
                                , request :: Args -> IO (Either String String)
                                } deriving (Show)
@@ -76,7 +76,9 @@ sectionToApiFunction endpoint blocks =
   let name = case blocks of ((Header 1 _ x) : _) -> x
       desc = case blocks of ((Header 1 _ _) : x) -> x
       rawrt = findRequestTemplate blocks
-      rt = parseRequestTemplate rawrt
+      rt = case rawrt of
+        (Just x) -> parseRequestTemplate x
+        Nothing  -> Nothing
       f = case rt of
         (Just t) -> requestTemplateToWrapper t endpoint
         Nothing  -> (\_ -> do return $ Left "could not parse request template")
@@ -86,10 +88,10 @@ sectionToApiFunction endpoint blocks =
                   requestTemplate = rt,
                   request = f }
 
-findRequestTemplate :: [Block] -> String
-findRequestTemplate [] = "not-found"
-findRequestTemplate ((CodeBlock _ s) : _) = s
-findRequestTemplate (_:xs) = findRequestTemplate xs
+findRequestTemplate :: [Block] -> Maybe String
+findRequestTemplate []                    = Nothing
+findRequestTemplate ((CodeBlock _ s) : _) = Just s
+findRequestTemplate (_:xs)                = findRequestTemplate xs
 
 requestTemplateToWrapper :: RequestTemplate -> String -> (Args -> IO (Either String String))
 requestTemplateToWrapper rt endpoint = doRequest rt endpoint
@@ -99,6 +101,7 @@ doRequest rt endpoint args =
   let method = rtMethod rt
       missing what name =
         error $ "Missing required " ++ what ++ ": `" ++ name ++ "'"
+      -- Path segments
       pathValue x =
         case x of
           (Constant s)        -> s
