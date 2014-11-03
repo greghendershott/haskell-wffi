@@ -6,30 +6,28 @@ import Data.Maybe (mapMaybe)
 import Data.Set (insert, delete)
 import Data.List (intersperse)
 import Data.Maybe (fromJust)
-import Text.Pandoc.Readers.Markdown
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
+import Text.Pandoc.Readers.Markdown
 import Text.Show.Functions -- to Show function member of ApiFunction
 import qualified Network.HTTP as H
 import qualified Network.HTTP.Headers as HH
 import qualified Network.URI as U
 import ParseRequest
 import KeyVal
+import PlainText
 
 type Args = [(String, String)]
 
--- FIXME: Convert the [Block] and [Inline] to String using some Pandoc
--- functionality?
-
-data ApiFunction = ApiFunction { apiName :: [Inline]
-                               , apiDescription :: [Block]
+data ApiFunction = ApiFunction { apiName :: String
+                               , apiDescription :: String
                                , requestTemplateRaw :: Maybe String -- debug
                                , requestTemplate :: Maybe RequestTemplate
                                , request :: Args -> IO (Either String String)
                                } deriving (Show)
 
-data Service = Service { serviceName :: [Inline]
-                       , serviceDescription :: [Block]
+data Service = Service { serviceName :: String
+                       , serviceDescription :: String
                        , endpoint :: String
                        , functions :: [ApiFunction]
                        } deriving (Show)
@@ -39,8 +37,8 @@ markdownToService s =
   let pd = markdownToPandoc s
       sections = h1Sections pd
       intro = head sections
-      name = case intro of ((Header 1 _ x) : _) -> x
-      desc = case intro of ((Header 1 _ _) : x) -> x
+      name = inlinesToPlainText $ case intro of ((Header 1 _ x) : _) -> x
+      desc = blocksToPlainText $ case intro of ((Header 1 _ _) : x) -> x
       ep = findEndpoint intro
   in Service { serviceName = name,
                serviceDescription = desc,
@@ -74,8 +72,8 @@ findEndpoint (_ : xs) = findEndpoint xs
 
 sectionToApiFunction :: String -> [Block] -> ApiFunction
 sectionToApiFunction endpoint blocks =
-  let name = case blocks of ((Header 1 _ x) : _) -> x
-      desc = case blocks of ((Header 1 _ _) : x) -> x
+  let name = inlinesToPlainText $ case blocks of ((Header 1 _ x) : _) -> x
+      desc = blocksToPlainText $ case blocks of ((Header 1 _ _) : x) -> x
       rawrt = findRequestTemplate blocks
       rt = case rawrt of
         (Just x) -> parseRequestTemplate x
@@ -147,6 +145,21 @@ doRequest rt endpoint args =
               (2,_,_) -> return $ Right (H.rspBody r)
               _       -> return $ Left (show r)
 
+-- argsToPath :: RequestTemplate Args String -> (Either String String)
+-- argsToPath rt args endpoint
+
+foo :: String -> (Either String String)
+foo input = do
+  x <- m input
+  y <- m input
+  return y
+
+m :: String -> (Either String String)
+m "good" = return "good"
+m "bad" = Left "error"
+
+
+
 methodStringToData s =
   case s of
     "GET" -> H.GET
@@ -181,8 +194,8 @@ test = do
             "",
             "```",
             "GET /api/v1/{paragraphs}",
-            -- "Server: {}",
-            -- "Header: {Aliased-Header}",
+            "Server: {}",
+            "Header: {Aliased-Header}",
             "```",
             "",
             ""]
@@ -191,7 +204,8 @@ test = do
   print service
   let f = request $ head $ functions service
   result <- f [("paragraphs","2")
-              --,("alias","foo")
-              --,("Server","bar")
+              ,("alias","foo")
+              ,("Server","bar")
+              ,("Aliased-Header","2")
               ]
   print result
