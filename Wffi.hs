@@ -1,5 +1,11 @@
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
+
 module Wffi(
-  markdownToService
+  markdownToService,
+  ApiFunction(..),
+  Service(..),
+  doRequest
 ) where
 
 import Data.Maybe (mapMaybe)
@@ -17,7 +23,7 @@ import ParseRequest
 import KeyVal
 import PlainText
 
-type Args = [(String, String)]
+type Args = [(String, String)] -- Named args, i.e. a dictionary
 
 data ApiFunction = ApiFunction { apiName :: String
                                , apiDescription :: String
@@ -188,7 +194,7 @@ test = do
             "",
             "Endpoint: http://horseebooksipsum.com",
             "",
-            "# Get",
+            "# Get Stuff",
             "",
             "## Request",
             "",
@@ -202,7 +208,16 @@ test = do
   print md
   let service = markdownToService md
   print service
+  -- Get the name of the function
+  let name = apiName $ head $ functions service
+  -- TO-DO camelCase this -- e.g. "Get Stuff" => "getStuff" to form
+  -- valid Haskell identifier.
+  print name
   let f = request $ head $ functions service
+
+  -- TO-DO: Use Template Haskell to define a function named `name`
+  -- that wraps the request function.
+
   result <- f [("paragraphs","2")
               ,("alias","foo")
               ,("Server","bar")
